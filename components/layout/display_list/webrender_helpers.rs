@@ -332,7 +332,7 @@ impl DisplayItem {
                             None,
                         );
 
-                        bounds = LayoutRect::new(LayoutPoint::zero(), bounds.size);
+                        bounds.origin = LayoutPoint::zero();
                         new_spatial_id
                     } else {
                         current_scroll_node_id.spatial_id
