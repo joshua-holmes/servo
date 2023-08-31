@@ -1235,6 +1235,9 @@ impl LayoutThread {
             document
                 .expect("No document in a non-display reflow?")
                 .needs_paint_from_layout();
+        }
+
+        if !reflow_goal.needs_display() && !reflow_goal.needs_display_list() {
             return;
         }
 
@@ -1279,14 +1282,16 @@ impl LayoutThread {
         }
         debug!("Layout done!");
 
-        // Observe notifications about rendered frames if needed right before
-        // sending the display list to WebRender in order to set time related
-        // Progressive Web Metrics.
-        self.paint_time_metrics
-            .maybe_observe_paint_time(self, epoch, is_contentful);
+        if reflow_goal.needs_display() {
+            // Observe notifications about rendered frames if needed right before
+            // sending the display list to WebRender in order to set time related
+            // Progressive Web Metrics.
+            self.paint_time_metrics
+                .maybe_observe_paint_time(self, epoch, is_contentful);
 
-        self.webrender_api
-            .send_display_list(display_list.compositor_info, display_list.wr.finalize().1);
+            self.webrender_api
+                .send_display_list(display_list.compositor_info, display_list.wr.finalize().1);
+        }
 
         self.update_iframe_sizes(iframe_sizes);
 
@@ -1341,13 +1346,16 @@ impl LayoutThread {
         &self,
         new_iframe_sizes: FnvHashMap<BrowsingContextId, Size2D<f32, CSSPixel>>,
     ) {
+        println!("new iframe sizes: {new_iframe_sizes:?}");
         let old_iframe_sizes =
             std::mem::replace(&mut *self.last_iframe_sizes.borrow_mut(), new_iframe_sizes);
+        println!("old iframe sizes: {old_iframe_sizes:?}");
 
         if self.last_iframe_sizes.borrow().is_empty() {
             return;
         }
 
+        println!("--> preparing\n");
         let size_messages: Vec<_> = self
             .last_iframe_sizes
             .borrow()
@@ -1370,6 +1378,7 @@ impl LayoutThread {
             .collect();
 
         if !size_messages.is_empty() {
+            println!("--> sending\n");
             let msg = ConstellationMsg::IFrameSizes(size_messages);
             if let Err(e) = self.constellation_chan.send(msg) {
                 warn!("Layout resize to constellation failed ({}).", e);

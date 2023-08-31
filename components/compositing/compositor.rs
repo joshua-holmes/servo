@@ -238,6 +238,9 @@ pub struct IOCompositor<Window: WindowMethods + ?Sized> {
 
     /// Waiting for external code to call present.
     waiting_on_present: bool,
+
+    /// The current frame number.
+    frame_number: Epoch,
 }
 
 #[derive(Clone, Copy)]
@@ -392,6 +395,7 @@ impl<Window: WindowMethods + ?Sized> IOCompositor<Window> {
             waiting_on_pending_frame: false,
             external_present: false,
             waiting_on_present: false,
+            frame_number: Epoch(1),
         }
     }
 
@@ -663,7 +667,8 @@ impl<Window: WindowMethods + ?Sized> IOCompositor<Window> {
 
                 let mut txn = Transaction::new();
                 txn.scroll_node_with_id(point, scroll_id, ScrollClamping::ToContentBounds);
-                txn.generate_frame(0);
+                self.frame_number.next();
+                txn.generate_frame(self.frame_number.0 as u64);
                 self.webrender_api
                     .send_transaction(self.webrender_document, txn);
             },
@@ -696,7 +701,8 @@ impl<Window: WindowMethods + ?Sized> IOCompositor<Window> {
                     ),
                     true,
                 );
-                txn.generate_frame(0);
+                self.frame_number.next();
+                txn.generate_frame(self.frame_number.0 as u64);
                 self.webrender_api
                     .send_transaction(self.webrender_document, txn);
             },
@@ -874,7 +880,8 @@ impl<Window: WindowMethods + ?Sized> IOCompositor<Window> {
         let pipeline_id = frame_tree.pipeline.id.to_webrender();
         let mut txn = Transaction::new();
         txn.set_root_pipeline(pipeline_id);
-        txn.generate_frame(0);
+        self.frame_number.next();
+        txn.generate_frame(self.frame_number.0 as u64);
         self.webrender_api
             .send_transaction(self.webrender_document, txn);
 
@@ -1307,7 +1314,8 @@ impl<Window: WindowMethods + ?Sized> IOCompositor<Window> {
                 self.set_pinch_zoom_level(old_zoom * combined_event.magnification);
                 txn.set_pinch_zoom(ZoomFactor::new(self.pinch_zoom_level()));
             }
-            txn.generate_frame(0);
+            self.frame_number.next();
+            txn.generate_frame(self.frame_number.0 as u64);
             self.webrender_api
                 .send_transaction(self.webrender_document, txn);
             self.waiting_for_results_of_scroll = true

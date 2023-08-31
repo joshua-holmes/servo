@@ -931,6 +931,7 @@ impl LayoutThread {
         &self,
         new_iframe_sizes: FnvHashMap<BrowsingContextId, Size2D<f32, CSSPixel>>,
     ) {
+        println!("new iframe sizes: {new_iframe_sizes:?}");
         let old_iframe_sizes =
             std::mem::replace(&mut *self.last_iframe_sizes.borrow_mut(), new_iframe_sizes);
 
@@ -938,6 +939,7 @@ impl LayoutThread {
             return;
         }
 
+        println!("--> sending\n");
         let size_messages: Vec<_> = self
             .last_iframe_sizes
             .borrow()

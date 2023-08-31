@@ -2104,6 +2104,7 @@ where
             // Layout sends new sizes for all subframes. This needs to be reflected by all
             // frame trees in the navigation context containing the subframe.
             FromLayoutMsg::IFrameSizes(iframe_sizes) => {
+                println!("GOT sizes: {iframe_sizes:?}");
                 self.handle_iframe_size_msg(iframe_sizes);
             },
             FromLayoutMsg::PendingPaintMetric(pipeline_id, epoch) => {
@@ -3173,6 +3174,7 @@ where
         // https://github.com/rust-lang/rust/issues/59159
         let browsing_context_size = browsing_context.size;
         let browsing_context_is_visible = browsing_context.is_visible;
+        println!("testing {:?}", browsing_context.id);
         debug_assert_eq!(
             browsing_context_size,
             load_info.window_size.initial_viewport
