@@ -1190,9 +1190,12 @@ impl Fragment {
         border_width: UntypedSideOffsets2D<Au>,
     ) -> Option<()> {
         let border_style_struct = style.get_border();
+
         let border_image_outset =
             border::image_outset(border_style_struct.border_image_outset, border_width);
-        let border_image_area = bounds.outer_rect(border_image_outset).size;
+        let bounds = bounds.outer_rect(border_image_outset);
+
+        let border_image_area = bounds.size;
         let border_image_width = border::image_width(
             &border_style_struct.border_image_width,
             border_width.to_layout(),
@@ -1273,12 +1276,13 @@ impl Fragment {
             fill: border_image_fill,
             repeat_horizontal: border_image_repeat.0.to_layout(),
             repeat_vertical: border_image_repeat.1.to_layout(),
-            outset: SideOffsets2D::new(
-                border_image_outset.top.to_f32_px(),
-                border_image_outset.right.to_f32_px(),
-                border_image_outset.bottom.to_f32_px(),
-                border_image_outset.left.to_f32_px(),
-            ),
+            outset: SideOffsets2D::zero(),
+            //outset: SideOffsets2D::new(
+            //    border_image_outset.top.to_f32_px(),
+            //    border_image_outset.right.to_f32_px(),
+            //    border_image_outset.bottom.to_f32_px(),
+            //    border_image_outset.left.to_f32_px(),
+            //),
         });
         state.add_display_item(DisplayItem::Border(CommonDisplayItem::with_data(
             base,
@@ -2120,7 +2124,7 @@ impl Fragment {
         }
 
         // Text
-        let mut glyphs = convert_text_run_to_glyphs(
+        let (largest_advance, mut glyphs) = convert_text_run_to_glyphs(
             text_fragment.run.clone(),
             text_fragment.range,
             baseline_origin,
@@ -2134,6 +2138,22 @@ impl Fragment {
         };
         state.indexable_text.insert(self.node, indexable_text);
 
+        // FIXME(mrobinson): This is a serious hack to enable a WebRender upgrade.
+        // Servo is not calculating glyph boundaries and is instead relying on the
+        // measured size of the content box here -- which is based on the positioning
+        // of the text. The issue is that glyphs can extend beyond the boundaries
+        // established by their brush origin and advance. Servo should be measuring
+        // the ink boundary rectangle based on the brush origin and the glyph extents
+        // instead.
+        //
+        // We don't yet have that information here, so in the meantime simply expand
+        // the boundary rectangle of the text by the largest character advance of the
+        // painted text run in all directions. This is used as a heuristic for a
+        // reasonable amount of "fudge" space to include the entire text run.
+        let inflated_bounds = stacking_relative_content_box
+            .inflate(largest_advance, largest_advance)
+            .to_layout();
+
         // Process glyphs in chunks to avoid overflowing WebRender's internal limits (#17230).
         while !glyphs.is_empty() {
             let mut rest_of_glyphs = vec![];
@@ -2145,7 +2165,7 @@ impl Fragment {
             state.add_display_item(DisplayItem::Text(CommonDisplayItem::with_data(
                 base.clone(),
                 webrender_api::TextDisplayItem {
-                    bounds: stacking_relative_content_box.to_layout(),
+                    bounds: inflated_bounds,
                     common: items::empty_common_item_properties(),
                     font_key: text_fragment.run.font_key,
                     color: text_color.to_layout(),
@@ -3016,7 +3036,8 @@ fn convert_text_run_to_glyphs(
     text_run: Arc<TextRun>,
     range: Range<ByteIndex>,
     mut origin: Point2D<Au>,
-) -> Vec<GlyphInstance> {
+) -> (Au, Vec<GlyphInstance>) {
+    let mut largest_advance = Au(0);
     let mut glyphs = vec![];
 
     for slice in text_run.natural_word_slices_in_visual_order(&range) {
@@ -3026,6 +3047,9 @@ fn convert_text_run_to_glyphs(
             } else {
                 glyph.advance()
             };
+
+            largest_advance = largest_advance.max(glyph.advance());
+
             if !slice.glyphs.is_whitespace() {
                 let glyph_offset = glyph.offset().unwrap_or(Point2D::zero());
                 let point = origin + glyph_offset.to_vector();
@@ -3038,7 +3062,8 @@ fn convert_text_run_to_glyphs(
             origin.x += glyph_advance;
         }
     }
-    return glyphs;
+
+    return (largest_advance, glyphs);
 }
 
 pub struct IndexableTextItem {
