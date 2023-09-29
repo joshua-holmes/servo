@@ -208,6 +208,9 @@ struct InlineFormattingContextState<'a, 'b> {
     /// [`LineItem`]s themselves are stored in the nesting state.
     current_line: LineUnderConstruction,
 
+    /// TODO
+    linebreak_before_new_content: bool,
+
     /// The line breaking state for this inline formatting context.
     linebreaker: Option<LineBreakLeafIter>,
 
@@ -334,6 +337,9 @@ impl<'a, 'b> InlineFormattingContextState<'a, 'b> {
     /// [`LineItem`]s and turn them into [`Fragment`]s, then reset the
     /// [`InlineFormattingContextState`] preparing it for laying out a new line.
     fn finish_current_line_and_reset(&mut self, layout_context: &LayoutContext) {
+        self.linebreak_before_new_content = false;
+        // If at the end of the current text run, finish line boxes that are at the end of their iterators.
+
         let mut line_item_from_child = None;
         for inline_box_state in self.inline_box_state_stack.iter_mut().rev() {
             if let Some(line_item_from_child) = line_item_from_child {
@@ -839,11 +845,12 @@ impl InlineFormattingContext {
                 inline: first_line_inline_start,
                 block: Length::zero(),
             }),
+            linebreak_before_new_content: false,
             white_space: containing_block.style.get_inherited_text().white_space,
             linebreaker: None,
             root_nesting_level: InlineContainerState {
                 line_items_so_far: Vec::with_capacity(self.inline_level_boxes.len()),
-                line_height: line_height_from_style(layout_context, containing_block.style),
+                line_height: Length::zero(),
                 has_content: false,
                 text_decoration_line: self.text_decoration_line,
             },
@@ -861,7 +868,13 @@ impl InlineFormattingContext {
         let mut iterator = InlineBoxChildIter::from_formatting_context(self);
         let mut parent_iterators = Vec::new();
         loop {
-            match iterator.next() {
+            let next = iterator.next();
+            if next.is_some() {
+                if ifc.linebreak_before_new_content {
+                    ifc.finish_current_line_and_reset(layout_context);
+                }
+            }
+            match next {
                 Some(child) => match &mut *child.borrow_mut() {
                     InlineLevelBox::InlineBox(inline_box) => {
                         ifc.start_inline_box(inline_box);
@@ -1331,6 +1344,11 @@ impl TextRun {
         while let Some((run_index, run)) = iterator.next() {
             // If this whitespace forces a line break, finish the line and reset everything.
             if self.glyph_run_is_whitespace_ending_with_preserved_newline(run) {
+                if ifc.linebreak_before_new_content {
+                    ifc.finish_current_line_and_reset(layout_context);
+                    text_run_inline_size = Length::zero();
+                }
+
                 // TODO: We shouldn't need to force the creation of a TextRun here, but only TextRuns are
                 // influencing line height calculation of lineboxes (and not all inline boxes on a line).
                 // Once that is fixed, we can avoid adding an empty TextRun here.
@@ -1340,8 +1358,7 @@ impl TextRun {
                     text_run_inline_size,
                     true,
                 );
-                ifc.finish_current_line_and_reset(layout_context);
-                text_run_inline_size = Length::zero();
+                ifc.linebreak_before_new_content = true;
                 continue;
             }
 
@@ -1359,6 +1376,11 @@ impl TextRun {
                 run.glyph_store.is_whitespace() && !white_space.preserve_spaces();
             if is_non_preserved_whitespace && !ifc.current_line.has_content {
                 continue;
+            }
+
+            if ifc.linebreak_before_new_content {
+                ifc.finish_current_line_and_reset(layout_context);
+                text_run_inline_size = Length::zero();
             }
 
             let advance_from_glyph_run = Length::from(run.glyph_store.total_advance());
