@@ -868,7 +868,7 @@ impl InlineFormattingContext {
             linebreaker: None,
             root_nesting_level: InlineContainerState {
                 line_items_so_far: Vec::with_capacity(self.inline_level_boxes.len()),
-                nested_block_size: Length::zero(),
+                nested_block_size: line_height_from_style(layout_context, &containing_block.style),
                 has_content: false,
                 text_decoration_line: self.text_decoration_line,
             },
@@ -1356,18 +1356,26 @@ impl TextRun {
         let mut text_run_inline_size = Length::zero();
         let mut iterator = runs.iter().enumerate();
         while let Some((run_index, run)) = iterator.next() {
+            if ifc.linebreak_before_new_content {
+                ifc.finish_current_line_and_reset(layout_context);
+                text_run_inline_size = Length::zero();
+            }
+
             // If this whitespace forces a line break, finish the line and reset everything.
             if self.glyph_run_is_whitespace_ending_with_preserved_newline(run) {
-                if ifc.linebreak_before_new_content {
-                    ifc.finish_current_line_and_reset(layout_context);
-                    text_run_inline_size = Length::zero();
-                }
-
-                // TODO: We shouldn't need to force the creation of a TextRun here, but only TextRuns are
-                // influencing line height calculation of lineboxes (and not all inline boxes on a line).
-                // Once that is fixed, we can avoid adding an empty TextRun here.
                 add_glyphs_to_current_line(ifc, glyphs.drain(..).collect(), text_run_inline_size);
+
+                // We need to ensure that the appropriate space for a linebox is created even if there
+                // was no other content on this line. We mark the line as having content (needing a
+                // advance) and having at least the height associated with this nesting of inline boxes.
+                ifc.current_line.has_content = true;
+                ifc.current_line
+                    .max_block_size
+                    .max_assign(new_max_height_of_line);
+
+                // Defer the actual line break until we've cleared all ending inline boxes.
                 ifc.linebreak_before_new_content = true;
+
                 continue;
             }
 
@@ -1385,11 +1393,6 @@ impl TextRun {
                 run.glyph_store.is_whitespace() && !white_space.preserve_spaces();
             if is_non_preserved_whitespace && !ifc.current_line.has_content {
                 continue;
-            }
-
-            if ifc.linebreak_before_new_content {
-                ifc.finish_current_line_and_reset(layout_context);
-                text_run_inline_size = Length::zero();
             }
 
             let advance_from_glyph_run = Length::from(run.glyph_store.total_advance());
