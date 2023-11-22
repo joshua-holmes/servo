@@ -14,7 +14,7 @@ use style::properties::longhands::flex_direction::computed_value::T as FlexDirec
 use style::properties::longhands::flex_wrap::computed_value::T as FlexWrap;
 use style::properties::longhands::justify_content::computed_value::T as JustifyContent;
 use style::values::computed::length::Size;
-use style::values::computed::Length;
+use style::values::computed::{Length, CSSPixelLength};
 use style::values::generics::flex::GenericFlexBasis as FlexBasis;
 use style::values::CSSFloat;
 use style::Zero;
@@ -234,7 +234,7 @@ fn layout<'context, 'boxes>(
     flex_item_boxes: impl Iterator<Item = &'boxes mut IndependentFormattingContext>,
 ) -> (
     impl Iterator<Item = (BoxFragment, PositioningContext)>,
-    Length,
+    CSSPixelLength,
 ) {
     // FIXME: get actual min/max cross size for the flex container.
     // We have access to style for the flex container in `containing_block.style`,
